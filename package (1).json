@@ -1,0 +1,13 @@
+{
+  "name": "sitereset-bot",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "axios": "^1.6.0",
+    "@anthropic-ai/sdk": "^0.24.0"
+  }
+}
