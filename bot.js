@@ -58,7 +58,7 @@ bot.onText(/\/start (audit|new)/, (msg, match) => {
   }
 });
 
-// ── Команда владельца: отправить ответ клиенту ────────────
+// ── Команда владельца: отправить текст клиенту ────────────
 bot.onText(/\/send (\d+) ([\s\S]+)/, async (msg, match) => {
   if (String(msg.chat.id) !== String(OWNER_ID)) return;
   const targetId = match[1];
@@ -80,6 +80,53 @@ bot.onText(/\/send (\d+) ([\s\S]+)/, async (msg, match) => {
     bot.sendMessage(OWNER_ID, `✅ Отправлено клиенту ${targetId}`);
   } catch(e) {
     bot.sendMessage(OWNER_ID, `❌ Ошибка: ${e.message}`);
+  }
+});
+
+// ── Владелец отправляет файл с подписью /send ID ──────────
+bot.on('message', async (msg) => {
+  if (String(msg.chat.id) !== String(OWNER_ID)) return;
+
+  const caption = (msg.caption || '').trim();
+  const match = caption.match(/^\/send (\d+)/);
+  if (!match) return;
+
+  const targetId = match[1];
+  const extraText = caption.replace(/^\/send \d+\s*/, '').trim();
+
+  try {
+    if (msg.document) {
+      await bot.sendDocument(targetId, msg.document.file_id, {
+        caption: extraText || undefined
+      });
+    } else if (msg.photo) {
+      const photo = msg.photo[msg.photo.length - 1];
+      await bot.sendPhoto(targetId, photo.file_id, {
+        caption: extraText || undefined
+      });
+    } else if (msg.video) {
+      await bot.sendVideo(targetId, msg.video.file_id, {
+        caption: extraText || undefined
+      });
+    } else {
+      return;
+    }
+
+    await delay(1200);
+    await bot.sendMessage(targetId,
+      `💡 Есть вопросы или хотите двигаться дальше?`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '💬 Хочу обсудить детали', callback_data: 'want_contact' }],
+            [{ text: '🔄 Начать заново', callback_data: 'restart' }]
+          ]
+        }
+      }
+    );
+    bot.sendMessage(OWNER_ID, `✅ Файл отправлен клиенту ${targetId}`);
+  } catch(e) {
+    bot.sendMessage(OWNER_ID, `❌ Ошибка отправки файла: ${e.message}`);
   }
 });
 
