@@ -4,11 +4,15 @@ const TOKEN = process.env.BOT_TOKEN || '8583015637:AAHujSR7PBiBO6FbtsV_5R_8VsKkM
 const OWNER_ID = process.env.OWNER_CHAT_ID || '345888574';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// state per user
 const states = {};
 const userData = {};
 
-const TG_SVG = ''; // unused
+function getUser(id) {
+  if (!userData[id]) userData[id] = { path: null, answers: {} };
+  return userData[id];
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Главное меню ──────────────────────────────────────────
 function sendMenu(chatId) {
@@ -27,44 +31,34 @@ function sendMenu(chatId) {
   );
 }
 
-// ── /start ────────────────────────────────────────────────
-bot.onText(/\/start (.+)/, (msg, match) => {
+// ── Старт без параметра ───────────────────────────────────
+bot.onText(/^\/start$/, (msg) => {
+  getUser(msg.chat.id);
+  sendMenu(msg.chat.id);
+});
+
+// ── Старт с параметром (deep link) ────────────────────────
+bot.onText(/\/start (audit|new)/, (msg, match) => {
   const id = msg.chat.id;
-  const param = match[1].trim();
-  userData[id] = { answers: {} };
+  const param = match[1];
+  userData[id] = { path: param, answers: {} };
 
   if (param === 'audit') {
     states[id] = 'audit_waiting_url';
-    userData[id].path = 'audit';
     bot.sendMessage(id,
       `🔍 *Аудит сайта*\n\nПришлите ссылку на ваш сайт — разберём по 6 параметрам и пришлём результат в течение 24 часов.\n\n_Пример: https://example.ru_`,
       { parse_mode: 'Markdown' }
     );
-    return;
-  }
-
-  if (param === 'new') {
+  } else {
     states[id] = 'new_q1';
-    userData[id].path = 'new';
     bot.sendMessage(id,
-      `🚀 *Создание сайта*\n\nОтлично! Задам несколько коротких вопросов — чтобы подготовить предложение под ваш бизнес.\n\n*Вопрос 1 из 4*\n👉 Чем занимается ваш бизнес?`,
+      `🚀 *Создание сайта*\n\nОтлично! Задам несколько коротких вопросов — подготовлю предложение под ваш бизнес.\n\n*Вопрос 1 из 4*\n👉 Чем занимается ваш бизнес?`,
       { parse_mode: 'Markdown' }
     );
-    return;
   }
-
-  // без параметра — обычное меню
-  userData[id] = { path: null, url: null, answers: {} };
-  sendMenu(id);
-});
-
-bot.onText(/^\/start$/, (msg) => {
-  userData[msg.chat.id] = { path: null, url: null, answers: {} };
-  sendMenu(msg.chat.id);
 });
 
 // ── Команда владельца: отправить ответ клиенту ────────────
-// /send 123456 текст ответа...
 bot.onText(/\/send (\d+) ([\s\S]+)/, async (msg, match) => {
   if (String(msg.chat.id) !== String(OWNER_ID)) return;
   const targetId = match[1];
@@ -73,9 +67,8 @@ bot.onText(/\/send (\d+) ([\s\S]+)/, async (msg, match) => {
     await bot.sendMessage(targetId, text, { parse_mode: 'Markdown' });
     await delay(1200);
     await bot.sendMessage(targetId,
-      `💡 *Есть вопросы или хотите двигаться дальше?*`,
+      `💡 Есть вопросы или хотите двигаться дальше?`,
       {
-        parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [{ text: '💬 Хочу обсудить детали', callback_data: 'want_contact' }],
@@ -84,7 +77,7 @@ bot.onText(/\/send (\d+) ([\s\S]+)/, async (msg, match) => {
         }
       }
     );
-    bot.sendMessage(OWNER_ID, `✅ Сообщение отправлено клиенту ${targetId}`);
+    bot.sendMessage(OWNER_ID, `✅ Отправлено клиенту ${targetId}`);
   } catch(e) {
     bot.sendMessage(OWNER_ID, `❌ Ошибка: ${e.message}`);
   }
@@ -96,60 +89,52 @@ bot.on('callback_query', async (q) => {
   const data = q.data;
   await bot.answerCallbackQuery(q.id);
 
-  // ── ПУТЬ 1: АУДИТ ──
   if (data === 'path_audit') {
+    userData[id] = { path: 'audit', answers: {} };
     states[id] = 'audit_waiting_url';
-    userData[id] = { path: 'audit' };
     bot.sendMessage(id,
-      `🔍 *Аудит сайта*\n\n📎 Пришлите ссылку на ваш сайт — разберём по 6 параметрам и пришлём результат в течение 24 часов.\n\n_Пример: https://example.ru_`,
+      `🔍 *Аудит сайта*\n\n📎 Пришлите ссылку на ваш сайт.\n\n_Пример: https://example.ru_`,
       { parse_mode: 'Markdown' }
     );
   }
 
-  // ── ПУТЬ 2: НОВЫЙ САЙТ ──
   if (data === 'path_new') {
-    states[id] = 'new_q1';
     userData[id] = { path: 'new', answers: {} };
+    states[id] = 'new_q1';
     bot.sendMessage(id,
-      `🚀 *Создание сайта*\n\nОтлично! Задам вам несколько коротких вопросов — чтобы подготовить предложение под ваш бизнес.\n\n*Вопрос 1 из 4*\n👉 Чем занимается ваш бизнес? Опишите в 1-2 предложениях.`,
+      `🚀 *Создание сайта*\n\nЗадам несколько коротких вопросов.\n\n*Вопрос 1 из 4*\n👉 Чем занимается ваш бизнес?`,
       { parse_mode: 'Markdown' }
     );
   }
 
-  // ── Цены ──
   if (data === 'prices') {
     bot.sendMessage(id,
       `📋 *Наши пакеты*\n\n` +
-      `*Старт — 15 000 ₽*\n▪️ Лендинг (1 страница)\n▪️ Адаптив под мобильный\n▪️ Формы заявок\n▪️ Срок: 3 дня\n\n` +
-      `*Стандарт — 29 000 ₽*\n▪️ До 5 страниц\n▪️ Каталог или портфолио\n▪️ Базовое SEO\n▪️ Срок: 5 дней\n\n` +
-      `*Про — 45 000 ₽*\n▪️ До 10 страниц\n▪️ Интеграции, CRM\n▪️ Настройка аналитики\n▪️ Срок: 7 дней\n\n` +
+      `*Старт — 15 000 ₽*\n▪️ Лендинг (1 страница)\n▪️ Адаптив\n▪️ Срок: 3 дня\n\n` +
+      `*Стандарт — 29 000 ₽*\n▪️ До 5 страниц\n▪️ Каталог / портфолио\n▪️ Срок: 5 дней\n\n` +
+      `*Про — 45 000 ₽*\n▪️ До 10 страниц + интеграции\n▪️ Срок: 7 дней\n\n` +
       `_Оплата после. Не понравится — возврат._`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
-          inline_keyboard: [
-            [{ text: '💬 Обсудить мой проект', callback_data: 'want_contact' }]
-          ]
+          inline_keyboard: [[{ text: '💬 Обсудить проект', callback_data: 'want_contact' }]]
         }
       }
     );
   }
 
-  // ── Хочу связаться ──
   if (data === 'want_contact') {
     states[id] = 'waiting_contact';
     const name = q.from.username ? `@${q.from.username}` : q.from.first_name;
     bot.sendMessage(OWNER_ID,
-      `🔥 *Горячий лид — SiteReset*\n\n👤 ${name}\n🆔 ${id}\n📂 Путь: ${userData[id]?.path || '?'}\n\nНажал "Хочу обсудить"`,
+      `🔥 *Горячий лид!*\n\n👤 ${name}\n🆔 ${id}\n📂 ${getUser(id).path || '?'}`,
       { parse_mode: 'Markdown' }
     );
-    bot.sendMessage(id,
-      `👍 Оставьте номер телефона или @username — свяжемся в течение часа.`
-    );
+    bot.sendMessage(id, `👍 Оставьте номер телефона или @username — свяжемся в течение часа.`);
   }
 
   if (data === 'restart') {
-    userData[id] = {};
+    userData[id] = { path: null, answers: {} };
     sendMenu(id);
   }
 
@@ -163,16 +148,20 @@ bot.on('callback_query', async (q) => {
 bot.on('message', async (msg) => {
   const id = msg.chat.id;
   const text = (msg.text || '').trim();
+
   if (!text || text.startsWith('/')) return;
   if (String(id) === String(OWNER_ID)) return;
 
   const state = states[id];
+  const user = getUser(id);
+
+  console.log(`[${id}] state=${state} text=${text.substring(0,50)}`);
 
   // ── Ждём контакт ──
   if (state === 'waiting_contact') {
     const name = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
     bot.sendMessage(OWNER_ID,
-      `📞 *Контакт от лида*\n\n👤 ${name}\n🆔 ${id}\n📱 ${text}\n📂 Путь: ${userData[id]?.path || '?'}`,
+      `📞 *Контакт от лида*\n\n👤 ${name}\n🆔 ${id}\n📱 ${text}\n📂 ${user.path || '?'}`,
       { parse_mode: 'Markdown' }
     );
     bot.sendMessage(id, '✅ Получили! Свяжемся в течение часа.');
@@ -180,9 +169,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // ══════════════════════════════════
-  // ПУТЬ 1 — АУДИТ
-  // ══════════════════════════════════
+  // ══ ПУТЬ 1: АУДИТ ══════════════════════════════════════
   if (state === 'audit_waiting_url') {
     let url = text;
     if (!url.startsWith('http')) url = 'https://' + url;
@@ -190,76 +177,69 @@ bot.on('message', async (msg) => {
       bot.sendMessage(id, '❌ Не похоже на ссылку. Пример: `https://example.ru`', { parse_mode: 'Markdown' });
       return;
     }
-
-    userData[id] = { ...userData[id], url };
+    user.url = url;
     states[id] = 'audit_pending';
 
     bot.sendMessage(id,
-      `✅ *Заявка принята!*\n\n🌐 ${url}\n\n⏳ Пришлём аудит в течение 24 часов прямо сюда.\n\nПока ждёте — можете посмотреть наши цены:`,
+      `✅ *Заявка принята!*\n\n🌐 ${url}\n\n⏳ Аудит пришлём в течение 24 часов прямо сюда.`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
-          inline_keyboard: [
-            [{ text: '📋 Посмотреть цены', callback_data: 'prices' }]
-          ]
+          inline_keyboard: [[{ text: '📋 Посмотреть цены', callback_data: 'prices' }]]
         }
       }
     );
-
     const name = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
     bot.sendMessage(OWNER_ID,
-      `🔔 *Новая заявка на АУДИТ*\n\n👤 ${name}\n🆔 \`${id}\`\n🌐 ${url}\n\n` +
-      `Отправить аудит:\n/send ${id} [текст аудита]`,
+      `🔔 *Новая заявка — АУДИТ*\n\n👤 ${name}\n🆔 \`${id}\`\n🌐 ${url}\n\nОтправить аудит:\n/send ${id} [текст]`,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
-  // ══════════════════════════════════
-  // ПУТЬ 2 — НОВЫЙ САЙТ (4 вопроса)
-  // ══════════════════════════════════
+  // ══ ПУТЬ 2: НОВЫЙ САЙТ — 4 вопроса ════════════════════
   if (state === 'new_q1') {
-    userData[id].answers.business = text;
+    user.answers.business = text;
     states[id] = 'new_q2';
     bot.sendMessage(id,
-      `*Вопрос 2 из 4*\n\n👉 Кто ваши клиенты? Кому вы продаёте?`,
+      `*Вопрос 2 из 4*\n\n👉 Кто ваши клиенты? Кому продаёте?`,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
   if (state === 'new_q2') {
-    userData[id].answers.clients = text;
+    user.answers.clients = text;
     states[id] = 'new_q3';
     bot.sendMessage(id,
-      `*Вопрос 3 из 4*\n\n👉 Что должен делать сайт? Например: принимать заявки, продавать онлайн, показывать портфолио...`,
+      `*Вопрос 3 из 4*\n\n👉 Что должен делать сайт?\n\nНапример: принимать заявки, продавать онлайн, показывать портфолио...`,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
   if (state === 'new_q3') {
-    userData[id].answers.goal = text;
+    user.answers.goal = text;
     states[id] = 'new_q4';
     bot.sendMessage(id,
-      `*Вопрос 4 из 4*\n\n👉 Есть ли примеры сайтов которые вам нравятся? Если да — скиньте ссылки. Если нет — просто напишите "нет".`,
+      `*Вопрос 4 из 4*\n\n👉 Есть примеры сайтов которые нравятся?\n\nЕсли да — скиньте ссылки. Если нет — напишите "нет".`,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
   if (state === 'new_q4') {
-    userData[id].answers.examples = text;
+    user.answers.examples = text;
     states[id] = 'new_pending';
+    const a = user.answers;
 
-    const a = userData[id].answers;
     bot.sendMessage(id,
-      `✅ *Отлично! Заявка принята.*\n\nПодготовим предложение с ценой и сроком в течение 24 часов.\n\nЕсли хотите ускорить — оставьте контакт:`,
+      `✅ *Отлично! Заявка принята.*\n\nПодготовим предложение с ценой и сроком в течение 24 часов.`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '📞 Оставить контакт', callback_data: 'want_contact' }],
+            [{ text: '📞 Оставить контакт для связи', callback_data: 'want_contact' }],
             [{ text: '📋 Посмотреть цены', callback_data: 'prices' }]
           ]
         }
@@ -272,20 +252,22 @@ bot.on('message', async (msg) => {
       `👤 ${name}\n🆔 \`${id}\`\n\n` +
       `🏢 Бизнес: ${a.business}\n` +
       `👥 Клиенты: ${a.clients}\n` +
-      `🎯 Цель сайта: ${a.goal}\n` +
+      `🎯 Цель: ${a.goal}\n` +
       `🔗 Примеры: ${a.examples}\n\n` +
-      `Отправить предложение:\n/send ${id} [текст предложения]`,
+      `Отправить предложение:\n/send ${id} [текст]`,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
-  // ── Если состояние непонятно — показать меню ──
-  if (!state || state === 'done') {
+  // ── Непонятное состояние ──
+  if (!state || state === 'done' || state === 'menu') {
     sendMenu(id);
   }
 });
 
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+// ── Глобальный обработчик ошибок ──────────────────────────
+bot.on('polling_error', (err) => console.error('Polling error:', err.message));
+process.on('uncaughtException', (err) => console.error('Uncaught:', err.message));
 
-console.log('✅ SiteReset Bot запущен — два пути: аудит + новый сайт');
+console.log('✅ SiteReset Bot запущен');
